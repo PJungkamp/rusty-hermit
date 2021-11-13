@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Event","Event type"],["EventFlags","Flags indicating which event occured"]]});
