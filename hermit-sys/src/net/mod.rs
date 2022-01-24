@@ -36,7 +36,7 @@ mod smol {
 }
 
 use crate::net::device::HermitNet;
-use crate::net::executor::{block_on, run_executor, spawn};
+use crate::net::executor::{block_on, run_nic_thread, run_executor, spawn};
 use crate::net::socket::AsyncTcpSocket;
 use hermit_abi::io;
 use hermit_abi::net as abi;
@@ -128,6 +128,7 @@ macro_rules! smol_to_abi {
 
 extern "C" {
 	fn sys_yield();
+	fn sys_block_current_task_with_timeout(timeout: u64);
 	fn sys_spawn(
 		id: *mut Tid,
 		func: extern "C" fn(usize),
@@ -136,6 +137,7 @@ extern "C" {
 		selector: isize,
 	) -> i32;
 	fn sys_netwait();
+	fn sys_irq_disable() -> bool;
 }
 
 static LOCAL_ENDPOINT: AtomicU16 = AtomicU16::new(0);
@@ -157,19 +159,12 @@ fn start_endpoint() -> u16 {
 }
 
 extern "C" fn nic_thread(_: usize) {
+    //unsafe { sys_irq_disable() };
 	loop {
-		unsafe {
-			sys_netwait();
-		}
-
-		debug!("nic_thread");
-
-		// this wakes all threads that have blocking io ready
-		if executor::POLLING_MODE.try_lock().is_ok() {
-			debug!("runs executor");
-			run_executor();
-		}
-		debug!("nic_thread finished");
+        unsafe { 
+            sys_netwait(); 
+        }
+		run_nic_thread();
 	}
 }
 
@@ -208,10 +203,11 @@ pub fn sys_socket() -> io::Result<abi::Socket> {
 		non_blocking: false,
 		timeout: None,
 	});
-	debug!("created socket");
+	debug!("creating socket");
 	spawn(send_future).detach();
 	spawn(recv_future).detach();
 	run_executor();
+	debug!("created socket");
 	Ok(socket)
 }
 
@@ -524,16 +520,16 @@ pub fn sys_tcp_read(socket: abi::Socket, buf: &mut [u8]) -> io::Result<usize> {
 		let proxy = async_socket.as_tcp_proxy(socket)?;
 		(proxy, *options)
 	};
-
+    
 	loop {
 		proxy
 			.with_ref(|async_socket| {
 				Ok(async_socket.poll_readable()?.with(socket, options.into()))
 			})?
 			.execute()?;
+		run_executor();
 		match proxy.with_mut(|async_socket| async_socket.read(buf, false))? {
 			Some(n) => {
-				run_executor();
 				break Ok(n);
 			}
 			None => continue,

@@ -80,7 +80,7 @@ impl WakeOn {
 		socket_map: &mut socket_map::SocketMap,
 	) -> io::Result<()> {
 		let entry = socket_map.get_mut(socket)?;
-		trace!("register waker for {:?}", self);
+		debug!("register WakeOn::{:?} for {:?}", self, entry);
 		match self {
 			Self::Send => entry.register_send_waker(waker),
 			Self::Recv => entry.register_recv_waker(waker),
@@ -164,7 +164,9 @@ impl<F> PollSocket<F> {
 		S: AnySocket<'static>,
 	{
 		match self.behaviour {
-			Behaviour::NonBlocking => self.poll_once(),
+			Behaviour::NonBlocking => {
+                self.poll_once()
+            },
 			Behaviour::Blocking(timeout) => executor::block_on(self.into_future(), timeout)?,
 		}
 	}
@@ -214,7 +216,9 @@ impl<F> PollSockets<F> {
 		S: AnySocket<'static>,
 	{
 		match self.behaviour {
-			Behaviour::NonBlocking => self.poll_once(),
+			Behaviour::NonBlocking => {
+                self.poll_once()
+            },
 			Behaviour::Blocking(timeout) => executor::block_on(self.into_future(), timeout)?,
 		}
 	}
@@ -285,7 +289,9 @@ impl<F> PollEvents<F> {
 		F: FnMut(&net::event::Event) -> Poll<io::Result<T>>,
 	{
 		match self.behaviour {
-			Behaviour::NonBlocking => self.poll_once(),
+			Behaviour::NonBlocking => {
+                self.poll_once()
+            },
 			Behaviour::Blocking(timeout) => executor::block_on(self.into_future(), timeout)?,
 		}
 	}

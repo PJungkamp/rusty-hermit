@@ -1,5 +1,6 @@
 use crate::net::{
 	nic,
+    socket_map,
 	poll::{Poll, PollSocketRaw, PollSocketsRaw, WakeOn},
 	socket::HandleWrapper,
 };
@@ -110,7 +111,7 @@ impl super::Socket for AsyncTcpSocket {
 		None
 	}
 
-	fn get_event_flags(&mut self) -> net::event::EventFlags {
+	fn get_event_flags(&self, _: &socket_map::SocketMap) -> net::event::EventFlags {
 		use net::event::EventFlags;
 		nic::lock().with(|nic| match self.inner {
 			Inner::Handle(ref handle) => nic.with_ref(handle, |tcp: &TcpSocket| {
@@ -229,12 +230,18 @@ impl AsyncTcpSocket {
 			))
 		} else {
 			self.with_socket_mut(|tcp| match tcp {
-				tcp if tcp.can_recv() => tcp
-					.recv(|data| {
-						let len = std::cmp::min(data.len(), buffer.len());
-						buffer[..len].copy_from_slice(&data[..len]);
-						(if peek { 0 } else { len }, Some(len))
-					})
+				tcp if tcp.can_recv() && peek => tcp
+					.peek_slice(buffer)
+                    .map(Some)
+					.map_err(|_err| {
+						io::Error::new(
+							io::ErrorKind::NotConnected,
+							&"the sockets read side is closed",
+						)
+					}),
+				tcp if tcp.can_recv() && !peek => tcp
+					.recv_slice(buffer)
+                    .map(Some)
 					.map_err(|_err| {
 						io::Error::new(
 							io::ErrorKind::NotConnected,
@@ -255,16 +262,16 @@ impl AsyncTcpSocket {
 			))
 		} else {
 			self.with_socket_mut(|tcp| match tcp {
-				tcp if tcp.can_send() => tcp.send_slice(buffer).map(Some).map_err(|_err| {
-					io::Error::new(
-						io::ErrorKind::NotConnected,
-						&"the sockets write side is closed",
-					)
-				}),
-				tcp if !tcp.may_send() => Err(io::Error::new(
-					io::ErrorKind::NotConnected,
-					&"the sockets write side is closed",
-				)),
+				tcp if tcp.can_send() => tcp
+                    .send_slice(buffer)
+                    .map(Some)
+                    .map_err(|_err| {
+                        io::Error::new(
+                            io::ErrorKind::NotConnected,
+                            &"the sockets write side is closed",
+                        )
+                    }),
+				tcp if !tcp.may_send() => Ok(Some(0)),
 				_ => Ok(None),
 			})
 		}
@@ -405,7 +412,7 @@ impl AsyncTcpSocket {
 		&self,
 	) -> io::Result<PollSocketRaw<impl FnMut(&TcpSocket) -> Poll<io::Result<()>>>> {
 		self.poll_socket(|tcp| {
-			debug!("poll_connected. State: {:?}", tcp.state());
+			info!("poll_connected. State: {:?}", tcp.state());
 			if tcp.may_recv() && tcp.may_send() {
 				Poll::Ready(Ok(()))
 			} else if !tcp.is_active() {
@@ -422,7 +429,7 @@ impl AsyncTcpSocket {
 	pub(crate) fn poll_readable(
 		&self,
 	) -> io::Result<PollSocketRaw<impl FnMut(&TcpSocket) -> Poll<io::Result<()>>>> {
-		self.poll_socket(|tcp| {
+		self.poll_socket(move |tcp| {
 			if tcp.can_recv() {
 				Poll::Ready(Ok(()))
 			} else if !tcp.is_active() {
@@ -430,7 +437,9 @@ impl AsyncTcpSocket {
 					io::ErrorKind::NotConnected,
 					&"not connected",
 				)))
-			} else {
+			} else if !tcp.may_recv() {
+				Poll::Ready(Ok(()))
+            } else {
 				Poll::Pending(WakeOn::Recv)
 			}
 		})
@@ -447,6 +456,8 @@ impl AsyncTcpSocket {
 					io::ErrorKind::NotConnected,
 					&"not connected",
 				)))
+            } else if !tcp.may_send() {
+				Poll::Ready(Ok(()))
 			} else {
 				Poll::Pending(WakeOn::Send)
 			}

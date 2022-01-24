@@ -25,7 +25,6 @@ use smoltcp::wire::Ipv4Cidr;
 use smoltcp::wire::{EthernetAddress, IpCidr, Ipv4Address};
 
 use crate::net::nic::{NetworkInterface, NetworkState};
-use crate::net::waker::WakerRegistration;
 
 extern "Rust" {
 	fn sys_get_mac_address() -> Result<[u8; 6], ()>;
@@ -175,7 +174,7 @@ impl NetworkInterface<HermitNet> {
 		NetworkState::Initialized(Self {
 			iface,
 			socket_set: SocketSet::new(vec![]),
-			woken: true,
+			woken: false,
 		})
 	}
 }

@@ -34,14 +34,14 @@ impl super::Socket for AsyncEventSocket {
 		Some((send, recv))
 	}
 
-	fn get_event_flags(&mut self) -> EventFlags {
+	fn get_event_flags(&self, socket_map: &socket_map::SocketMap) -> EventFlags {
 		self.events
 			.iter()
 			.any(|Event { socket, flags, .. }| {
-				socket_map::lock()
-					.get_mut(*socket)
-					.and_then(|entry| entry.async_socket.as_socket_mut())
-					.map(|socket| socket.get_event_flags().0 & flags.0 != EventFlags::NONE)
+				socket_map
+					.get(*socket)
+					.and_then(|entry| entry.async_socket.as_socket_ref())
+					.map(|socket| socket.get_event_flags(socket_map).0 & flags.0 != EventFlags::NONE)
 					.unwrap_or(false)
 			})
 			.then(|| EventFlags(EventFlags::READABLE))
@@ -96,10 +96,11 @@ impl AsyncEventSocket {
 		&self,
 	) -> poll::PollEventsRaw<impl FnMut(&Event) -> poll::Poll<io::Result<Event>>> {
 		poll::PollEventsRaw::new(self.events.clone(), move |event| {
-			socket_map::lock()
-				.get_mut(event.socket)
+			let guard = socket_map::lock();
+            guard
+				.get(event.socket)
 				.and_then(|entry| {
-					let flags = entry.async_socket.as_socket_mut()?.get_event_flags();
+					let flags = entry.async_socket.as_socket_ref()?.get_event_flags(&guard);
 					debug!("flags are: {:b}", flags.0);
 					debug!("interests are: {:b}", event.flags.0);
 					let matching_flags = flags.0 & event.flags.0;

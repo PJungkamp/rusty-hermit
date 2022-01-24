@@ -9,7 +9,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::task::{Poll, Waker};
 
 lazy_static! {
-	static ref SOCKETS: Mutex<SocketMap> = Mutex::new(SocketMap::new());
+	pub(crate) static ref SOCKETS: Mutex<SocketMap> = Mutex::new(SocketMap::new());
 }
 
 pub(crate) fn lock() -> MutexGuard<'static, SocketMap> {
@@ -36,7 +36,7 @@ pub(crate) struct Options {
 pub(crate) struct SocketEntry {
 	/// the async socket to perform operations on
 	pub async_socket: AsyncSocket,
-	/// options for callign behaviour of a socket
+	/// options for calling behaviour of a socket
 	pub options: Options,
 	// whether this entry is closing
 	pub closing: bool,
@@ -69,6 +69,7 @@ impl SocketEntry {
 	///
 	/// this is safe to call for different wakers
 	pub(crate) fn register_send_waker(&mut self, waker: &Waker) {
+		debug!("register send waker");
 		self.send_wakers.push(waker.clone());
 	}
 
@@ -76,6 +77,7 @@ impl SocketEntry {
 	///
 	/// this is safe to call for different wakers
 	pub(crate) fn register_recv_waker(&mut self, waker: &Waker) {
+		debug!("register recv waker");
 		self.recv_wakers.push(waker.clone());
 	}
 
@@ -92,7 +94,7 @@ impl SocketEntry {
 
 	/// wake all registered recv wakers
 	fn wake_recv(&mut self) {
-		trace!("waking {} recv wakers", self.send_wakers.len());
+		debug!("waking {} recv wakers", self.recv_wakers.len());
 		for waker in self.recv_wakers.drain(..) {
 			waker.wake();
 		}
@@ -100,7 +102,7 @@ impl SocketEntry {
 
 	/// wake all registered recv wakers
 	fn wake_send(&mut self) {
-		trace!("waking {} send wakers", self.send_wakers.len());
+		debug!("waking {} send wakers", self.send_wakers.len());
 		for waker in self.send_wakers.drain(..) {
 			waker.wake();
 		}
@@ -244,14 +246,15 @@ impl SocketMap {
 		let send_future = future::poll_fn(move |cx| {
 			let mut sockets = lock();
 			if let Ok(entry) = sockets.get_mut(socket) {
-				if entry.closing {
-					return Poll::Ready(());
-				}
 				trace!("waking send for {:?}", socket);
 				entry.send_task_waker.register(cx.waker());
 				entry.wake_send();
-				sockets.register_exclusive_waker(socket, cx.waker(), poll::WakeOn::Send);
-				Poll::Pending
+				if entry.closing {
+					Poll::Ready(())
+				} else {
+				    sockets.register_exclusive_waker(socket, cx.waker(), poll::WakeOn::Send);
+				    Poll::Pending
+                }
 			} else {
 				Poll::Ready(())
 			}
@@ -265,8 +268,12 @@ impl SocketMap {
 				trace!("waking recv for {:?}", socket);
 				entry.recv_task_waker.register(cx.waker());
 				entry.wake_recv();
-				sockets.register_exclusive_waker(socket, cx.waker(), poll::WakeOn::Recv);
-				Poll::Pending
+				if entry.closing {
+					Poll::Ready(())
+				} else {
+                    sockets.register_exclusive_waker(socket, cx.waker(), poll::WakeOn::Recv);
+                    Poll::Pending
+                }
 			} else {
 				Poll::Ready(())
 			}

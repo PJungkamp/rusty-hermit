@@ -1,7 +1,5 @@
 use crate::net::device::HermitNet;
 use crate::net::socket::HandleWrapper;
-use crate::net::waker::WakerRegistration;
-use concurrent_queue::ConcurrentQueue;
 #[cfg(feature = "dhcpv4")]
 use smoltcp::dhcp::Dhcpv4Client;
 use smoltcp::iface::EthernetInterface;
@@ -10,10 +8,9 @@ use smoltcp::socket::{AnySocket, SocketSet, TcpSocket, TcpSocketBuffer};
 #[cfg(feature = "dhcpv4")]
 use smoltcp::wire::{IpCidr, Ipv4Address, Ipv4Cidr};
 use std::sync::{Mutex, MutexGuard};
-use std::task::{Context, Waker};
 
 lazy_static! {
-	static ref NIC: Mutex<NetworkState> = Mutex::new(NetworkState::Missing);
+	pub(crate) static ref NIC: Mutex<NetworkState> = Mutex::new(NetworkState::Missing);
 }
 
 /// lock the global NetworkState
@@ -83,8 +80,8 @@ where
 	}
 
 	pub(crate) fn create_tcp_handle(&mut self) -> HandleWrapper {
-		let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 65535]);
-		let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 65535]);
+		let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 2usize.pow(16)]);
+		let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 2usize.pow(16)]);
 		let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 		trace!("creating tcp handle");
 		let handle = self.socket_set.add(tcp_socket);
@@ -105,14 +102,14 @@ where
 	}
 
 	pub fn poll(&mut self, timestamp: smoltcp::time::Instant) {
-		self.woken = false;
-		while self
-			.iface
-			.poll(&mut self.socket_set, timestamp.into())
-			.unwrap_or(true)
-		{
-			// make progress
-		}
+        self.socket_set.prune();
+		loop { 
+            match self.iface.poll(&mut self.socket_set, timestamp.into()) {
+                Ok(true) => (),
+                Ok(false) => break,
+                Err(err) => debug!("poll error: {:?}",err),
+            }
+        }
 		#[cfg(feature = "dhcpv4")]
 		let config = self
 			.dhcp
@@ -157,6 +154,7 @@ where
 				}
 			}
 		});
+		self.woken = false;
 	}
 
 	pub(crate) fn poll_delay(

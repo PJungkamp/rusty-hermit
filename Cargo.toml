@@ -9,21 +9,13 @@ members = [
     "examples/demo",
     "examples/tcp_echo",
     "examples/tcp_server",
+    "examples/webslides",
     "examples/mio_tcp_server",
 ]
 exclude = ["target", "loader", "libhermit-rs"]
 
-[profile.release]
-opt-level = 2
-debug = false
-rpath = false
-lto = false
-debug-assertions = false
-
-[profile.dev]
-opt-level = 1      # controls the `--opt-level` the compiler builds with
-debug = true       # controls whether the compiler passes `-C debuginfo`
-                   # a value of `true` is equivalent to `2`
-rpath = false      # controls whether the compiler passes `-C rpath`
-lto = false         # controls `-C lto` for binaries and staticlibs
-debug-assertions = true # controls whether debug assertions are enabled
+[patch.crates-io]
+getrandom = { git = "https://github.com/rust-random/getrandom.git" }
+rouille = { git = "https://github.com/simonschoening/rouille.git", branch = "hermit"}
+tiny_http = { git = "https://github.com/hermitcore/tiny-http.git" }
+proc-macro2 = {git = "https://github.com/dtolnay/proc-macro2.git", tag = "1.0.29" }

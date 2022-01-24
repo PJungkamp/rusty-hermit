@@ -25,12 +25,6 @@ impl HandleWrapper {
 	pub(crate) fn inner(&self) -> SocketHandle {
 		self.0
 	}
-
-	pub(crate) fn into_inner(self) -> SocketHandle {
-		let handle = self.0;
-		std::mem::forget(self);
-		handle
-	}
 }
 
 impl Clone for HandleWrapper {
@@ -41,8 +35,8 @@ impl Clone for HandleWrapper {
 }
 
 impl Drop for HandleWrapper {
-	fn drop(&mut self) {
-		nic::lock().with(|nic| nic.socket_set.release(self.inner()));
+	fn drop(&mut self) { 
+        nic::lock().with(|nic| nic.socket_set.release(self.inner()));
 	}
 }
 
@@ -119,7 +113,7 @@ pub(crate) trait Socket {
 		waker: &task::Waker,
 	) -> Option<(Vec<net::Socket>, Vec<net::Socket>)>;
 	/// get the eventflags for this socket
-	fn get_event_flags(&mut self) -> net::event::EventFlags;
+	fn get_event_flags(&self, socket_map: &socket_map::SocketMap) -> net::event::EventFlags;
 	/// update state on any wake event
 	///
 	/// by default this does nothing
@@ -203,10 +197,6 @@ pub(crate) async fn close(socket: net::Socket) -> io::Result<()> {
 }
 
 impl AsyncSocket {
-	pub(crate) fn new() -> Self {
-		Self::Unbound
-	}
-
 	pub(crate) fn as_socket_ref(&self) -> io::Result<&dyn Socket> {
 		match self {
 			Self::Unbound => Err(io::Error::new(
@@ -256,7 +246,7 @@ impl AsyncSocket {
 		socket: net::Socket,
 	) -> io::Result<impl SocketProxy<AsyncTcpSocket>> {
 		match self {
-			Self::Tcp(tcp) => Ok(AsyncSocketProxy::new(
+			Self::Tcp(_) => Ok(AsyncSocketProxy::new(
 				socket,
 				Self::as_tcp_ref,
 				Self::as_tcp_mut,
@@ -293,7 +283,7 @@ impl AsyncSocket {
 		socket: net::Socket,
 	) -> io::Result<impl SocketProxy<AsyncEventSocket>> {
 		match self {
-			Self::Event(event) => Ok(AsyncSocketProxy::new(
+			Self::Event(_) => Ok(AsyncSocketProxy::new(
 				socket,
 				Self::as_event_ref,
 				Self::as_event_mut,
@@ -330,7 +320,7 @@ impl AsyncSocket {
 		socket: net::Socket,
 	) -> io::Result<impl SocketProxy<AsyncWakerSocket>> {
 		match self {
-			Self::Waker(waker) => Ok(AsyncSocketProxy::new(
+			Self::Waker(_) => Ok(AsyncSocketProxy::new(
 				socket,
 				Self::as_waker_ref,
 				Self::as_waker_mut,

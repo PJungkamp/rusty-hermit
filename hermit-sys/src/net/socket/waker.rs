@@ -1,11 +1,13 @@
+use crate::net::socket_map;
 use crate::net::waker::WakerRegistration;
 use hermit_abi::net;
 use hermit_abi::net::event::EventFlags;
 use std::task::Waker;
+use std::sync::atomic::{AtomicU32,Ordering};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct AsyncWakerSocket {
-	event_flags: u32,
+	event_flags: AtomicU32,
 	send_waker: WakerRegistration,
 	recv_waker: WakerRegistration,
 }
@@ -27,8 +29,8 @@ impl super::Socket for AsyncWakerSocket {
 		None
 	}
 
-	fn get_event_flags(&mut self) -> EventFlags {
-		EventFlags(std::mem::replace(&mut self.event_flags, EventFlags::NONE))
+	fn get_event_flags(&self, _: &socket_map::SocketMap) -> EventFlags {
+		EventFlags(self.event_flags.swap(EventFlags::NONE, Ordering::SeqCst))
 	}
 
 	fn close(&mut self) {}
@@ -39,7 +41,7 @@ impl AsyncWakerSocket {
 		Self {
 			send_waker: WakerRegistration::new(),
 			recv_waker: WakerRegistration::new(),
-			event_flags: EventFlags::NONE,
+			event_flags: AtomicU32::new(EventFlags::NONE),
 		}
 	}
 
@@ -63,6 +65,6 @@ impl AsyncWakerSocket {
 		if event_flags.0 & (EventFlags::RCLOSED | EventFlags::READABLE) != EventFlags::NONE {
 			self.wake_recv();
 		}
-		self.event_flags = event_flags.0;
+		self.event_flags.store(event_flags.0,Ordering::SeqCst);
 	}
 }

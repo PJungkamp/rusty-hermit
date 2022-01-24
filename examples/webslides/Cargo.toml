@@ -1,0 +1,26 @@
+[package]
+name = "webslides"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rouille = { version = "3.5.0", default-features = false }
+rust-embed = { version = "6.3.0", features = ["debug-embed"] }
+
+[target.'cfg(all(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64"), target_os = "hermit"))'.dependencies.hermit-sys]
+path = "../../hermit-sys"
+default-features = false
+features = ["with_submodule"]
+
+[features]
+default = ["pci", "acpi", "smoltcp"]
+vga = ["hermit-sys/vga"]
+dhcpv4 = ["hermit-sys/dhcpv4"]
+pci = ["hermit-sys/pci"]
+acpi = ["hermit-sys/acpi"]
+fsgsbase = ["hermit-sys/fsgsbase"]
+smp = ["hermit-sys/smp"]
+smoltcp = ["hermit-sys/smoltcp"]
+instrument = ["hermit-sys/instrument"]
