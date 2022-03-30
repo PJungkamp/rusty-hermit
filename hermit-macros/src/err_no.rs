@@ -23,7 +23,7 @@ fn get_enum(input: DeriveInput) -> Result<(Ident, Type, Variants)> {
 	} else {
 		return Err(Error::new(
 			ident.span(),
-			"can only derive ErrNo for discriminanted C-style enums",
+			"can only derive ErrNo for C-style enums",
 		));
 	};
 

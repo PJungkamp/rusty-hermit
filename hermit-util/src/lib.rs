@@ -8,7 +8,3 @@ pub mod derive {
 	/// traits on a descriminated C-style enum.
 	pub use hermit_macros::ErrNo;
 }
-
-mod sealed {
-	pub trait Sealed {}
-}
